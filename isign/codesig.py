@@ -91,12 +91,13 @@ class Codesig(object):
         return macho_cs.Blob_.build(blob)
 
     def set_entitlements(self, entitlements_path):
-        log.debug("entitlements:")
+        # log.debug("entitlements:")
         try:
             entitlements = self.get_blob('CSMAGIC_ENTITLEMENT')
-            log.debug("found entitlements slot in the image")
+            # log.debug("found entitlements slot in the image")
         except KeyError:
-            log.debug("no entitlements found")
+            # log.debug("no entitlements found")
+            pass
         else:
             # make entitlements data if slot was found
             # libraries do not have entitlements data
