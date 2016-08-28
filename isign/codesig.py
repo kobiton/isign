@@ -27,7 +27,8 @@ class EntitlementsSlot(CodeDirectorySlot):
     offset = -5
 
     def get_contents(self):
-        return self.codesig.get_blob_data('CSMAGIC_ENTITLEMENT')
+        blobs = self.codesig.get_blobs('CSMAGIC_ENTITLEMENT', min_expected=1, max_expected=1)
+        return self.codesig.get_blob_data(blobs[0])
 
 
 class ApplicationSlot(CodeDirectorySlot):
@@ -51,7 +52,8 @@ class RequirementsSlot(CodeDirectorySlot):
     offset = -2
 
     def get_contents(self):
-        return self.codesig.get_blob_data('CSMAGIC_REQUIREMENTS')
+        blobs = self.codesig.get_blobs('CSMAGIC_REQUIREMENTS', min_expected=1, max_expected=1)
+        return self.codesig.get_blob_data(blobs[0])
 
 
 class InfoSlot(CodeDirectorySlot):
@@ -79,21 +81,33 @@ class Codesig(object):
     def build_data(self):
         return macho_cs.Blob.build(self.construct)
 
-    def get_blob(self, magic):
+    def get_blobs(self, magic, min_expected=None, max_expected=None):
+        """ get the blobs corresponding to the magic value from the blob index """
+        blobs = []
         for index in self.construct.data.BlobIndex:
             if index.blob.magic == magic:
-                return index.blob
-        raise KeyError(magic)
+                blobs.append(index.blob)
 
-    def get_blob_data(self, magic):
+        if min_expected != None and len(blobs) < min_expected:
+            raise KeyError("""The number of slots in blob index for magic '{}' was less than
+                the minimum expected ({})""".format(magic, min_expected))
+
+        if max_expected != None and len(blobs) > max_expected:
+            raise KeyError("""The number of slots in blob index for magic '{}' was more than
+                the maximum expected ({})""".format(magic, max_expected))
+
+
+        return blobs
+
+    def get_blob_data(self, blob):
         """ convenience method, if we just want the data """
-        blob = self.get_blob(magic)
         return macho_cs.Blob_.build(blob)
 
     def set_entitlements(self, entitlements_path):
         # log.debug("entitlements:")
         try:
-            entitlements = self.get_blob('CSMAGIC_ENTITLEMENT')
+            entitlements_blobs = self.get_blobs('CSMAGIC_ENTITLEMENT', min_expected=1, max_expected=1)
+            entitlements = entitlements_blobs[0]
             # log.debug("found entitlements slot in the image")
         except KeyError:
             # log.debug("no entitlements found")
@@ -111,7 +125,8 @@ class Codesig(object):
 
     def set_requirements(self, signer):
         # log.debug("requirements:")
-        requirements = self.get_blob('CSMAGIC_REQUIREMENTS')
+        requirements_blobs = self.get_blobs('CSMAGIC_REQUIREMENTS', min_expected=1, max_expected=1)
+        requirements = requirements_blobs[0]
         # requirements_data = macho_cs.Blob_.build(requirements)
         # log.debug(hashlib.sha1(requirements_data).hexdigest())
 
@@ -162,17 +177,6 @@ class Codesig(object):
         # requirements_data = macho_cs.Blob_.build(requirements)
         # log.debug(hashlib.sha1(requirements_data).hexdigest())
 
-    def get_codedirectories(self):
-        code_directories = []
-        for index in self.construct.data.BlobIndex:
-            if index.blob.magic == 'CSMAGIC_CODEDIRECTORY':
-                code_directories.append(index.blob)
-
-        if len(code_directories) == 0:
-            raise Exception("Couldn't find any code directories")
-
-        return code_directories
-
     def get_codedirectory_hash_index(self, slot, code_directory):
         """ The slots have negative offsets, because they start from the 'top'.
             So to get the actual index, we add it to the length of the
@@ -193,11 +197,10 @@ class Codesig(object):
             code_directory.data.hashes[index] = slot.get_hash(hash_algorithm)
 
     def set_codedirectories(self, seal_path, info_path, signer):
-        cd = self.get_codedirectories()
+        cd = self.get_blobs('CSMAGIC_CODEDIRECTORY', min_expected=1, max_expected=2)
         changed_bundle_id = self.signable.get_changed_bundle_id()
 
         for i, code_directory in enumerate(cd):
-
             # TODO: Is there a better way to figure out which hashing algorithm we should use?
             hash_algorithm = 'sha256' if i > 0 else 'sha1'
 
@@ -239,12 +242,16 @@ class Codesig(object):
         # seems like this is a coincidence of the structure, where
         # it's the only blobwrapper at that level...
         # log.debug("sig:")
-        sigwrapper = self.get_blob('CSMAGIC_BLOBWRAPPER')
+        blob_wrappers = self.get_blobs('CSMAGIC_BLOBWRAPPER', min_expected=1, max_expected=1)
+        sigwrapper = blob_wrappers[0]
+
         # oldsig = sigwrapper.bytes.value
         # signer._log_parsed_asn1(sigwrapper.data.data.value)
         # open("sigrip.der", "wb").write(sigwrapper.data.data.value)
-        cd_data = self.get_blob_data('CSMAGIC_CODEDIRECTORY')
-        sig = signer.sign(cd_data)
+
+        code_directories = self.get_blobs('CSMAGIC_CODEDIRECTORY', min_expected=1, max_expected=2)
+        cd_data = self.get_blob_data(code_directories[0])
+        sig = signer.sign(cd_data, 'sha1')
         # log.debug("sig len: {0}".format(len(sig)))
         # log.debug("old sig len: {0}".format(len(oldsig)))
         # open("my_sigrip.der", "wb").write(sig)
@@ -270,9 +277,7 @@ class Codesig(object):
     def resign(self, bundle, signer):
         """ Do the actual signing. Create the structre and then update all the
             byte offsets """
-        codedirs = self.get_codedirectories()
-        if len(codedirs) > 2:
-            raise Exception("Too many code directories (%d)" % len(codedirs))
+        codedirs = self.get_blobs('CSMAGIC_CODEDIRECTORY', min_expected=1, max_expected=2)
 
         # TODO - the hasattr is a code smell. Make entitlements dependent on
         # isinstance(App, bundle) or signable type being Executable? May need to do
