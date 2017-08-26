@@ -275,14 +275,20 @@ if [[ "$DEVELOP" == true ]]; then
     python setup.py develop
 else
     # Fix: isign doesn't work for reinstallation.
-    INSTALL_DIR=`dirname $(which isign)`
+    is_isign=`echo $(which isign)`
 
-    if [ -d "$INSTALL_DIR"  ]; then
-      echo "Removing previous isign files"
+    if [[ ! -z "$is_isign" ]]; then
 
-      rm "$INSTALL_DIR/isign"
-      rm "$INSTALL_DIR/isign_export_creds.sh"
-      rm "$INSTALL_DIR/isign_guess_mobileprovision.sh"
+      INSTALL_DIR=`dirname "$is_isign"`
+
+      if [[ -d "$INSTALL_DIR" ]]; then
+
+        echo "Removing previous isign files"
+
+        rm "$INSTALL_DIR/isign"
+        rm "$INSTALL_DIR/isign_export_creds.sh"
+        rm "$INSTALL_DIR/isign_guess_mobileprovision.sh"
+      fi
     fi
 
     python setup.py install
