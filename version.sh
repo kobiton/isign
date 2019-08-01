@@ -6,10 +6,11 @@
 set -e
 MAJMIN_VERSION="1.5"
 
-pushd $(dirname $0) >/dev/null
+# path of package isign have a white space, when run INSTALL.sh script include 'python setup.py'
+# 'python setup.py' script has error if setup.py include script import 'version.sh'
+# Error log: /../White Space/isign/version.sh: line 9: pushd: no other directory
 working_dir=$PWD
-name=$(basename $PWD)
-popd >/dev/null
+name=$(basename "$PWD")
 package=$(echo $name | sed 's/-/_/g')
 version_json="${working_dir}/${package}/version.json"
 
@@ -42,11 +43,12 @@ fi
 version="${majmin_version:-$MAJMIN_VERSION}.${patch_version}${version_suffix}"
 json='"version": "'$version'", "commit": "'$(git rev-parse HEAD)'", "build": "'${BUILD_TAG:-"dev"}'"'
 # write-out version.json
-echo "{${json}}" > $version_json
+# add " in front and behind variable is a path to fix path have a white space
+echo "{${json}}" > "$version_json"
 
 style="$1"
 if [[ "$style" = "json" ]]; then
-    cat $version_json
+    cat "$version_json"
 else
     echo $version
 fi
